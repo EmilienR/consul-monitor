@@ -1,0 +1,9 @@
+[package]
+name = "consul_monitor"
+version = "0.1.0"
+edition = "2021"
+
+
+[dependencies]
+consul={ git="https://github.com/EmilienR/consul-rust", branch="dev-status-api"}
+argparse = "0.2"
