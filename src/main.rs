@@ -40,10 +40,8 @@ fn print_service_perfdata_and_details(passing_service_count: &u32, srvcs: &Vec<S
     }
 }
 
-fn check_service_health(c: Client, wmin: Option<u32>, wmax: Option<u32>, cmin: Option<u32>, cmax: Option<u32>, service_name: Option<String>, tag: Option<String>) {
-    let service_name = service_name.expect("service-name must be provided for this check");
-
-    match c.service(&*service_name, tag.as_deref(), false, None) {
+fn check_service_health(c: Client, service_name: &str, wmin: Option<u32>, wmax: Option<u32>, cmin: Option<u32>, cmax: Option<u32>, tag: Option<String>) {
+    match c.service(service_name, tag.as_deref(), false, None) {
         Ok(consul_srvc_res) => {
             let mut passing_service_count = 0;
             for srvc in &consul_srvc_res.0 {
@@ -95,14 +93,13 @@ fn print_health_checks_perfdata_and_details(service_name: Option<String>, check_
     println!("(Filtered ServiceName : {service_name}, CheckID : {check_id})");
 }
 
-fn check_node_service_health(c: Client, wmin: Option<u32>, wmax: Option<u32>, cmin: Option<u32>, cmax: Option<u32>, node: Option<String>, service_name: Option<String>, check_id: Option<String>) {
-    if service_name.is_none() && check_id.is_none() {
-        eprintln!("service-name or check-id must be provided for this check");
+fn check_node_service_health(c: Client, node: &str, wmin: Option<u32>, wmax: Option<u32>, cmin: Option<u32>, cmax: Option<u32>, service: Option<String>, check_id: Option<String>) {
+    if service.is_none() && check_id.is_none() {
+        eprintln!("service or check-id must be provided for this check");
         exit(EXIT_UNKNOWN);
     }
-    let node = node.expect("node must be provided for this check");
 
-    match c.node(&*node, check_id.as_deref(), service_name.as_deref(), None) {
+    match c.node(node, check_id.as_deref(), service.as_deref(), None) {
         Ok(srvc_health) => {
             let mut passing_check_count = 0;
             for health in &srvc_health.0 {
@@ -128,7 +125,7 @@ fn check_node_service_health(c: Client, wmin: Option<u32>, wmax: Option<u32>, cm
                 print!("OK : {} passing checks", passing_check_count);
                 res = EXIT_OK;
             }
-            print_health_checks_perfdata_and_details(service_name, check_id, passing_check_count, &srvc_health.0);
+            print_health_checks_perfdata_and_details(service, check_id, passing_check_count, &srvc_health.0);
             exit(res)
         },
         Err(err) => {
@@ -193,19 +190,20 @@ fn main() {
     let mut warning_max: Option<u32> = None;
     let mut critical_min: Option<u32> = None;
     let mut critical_max: Option<u32> = None;
-    let mut service_name: Option<String> = None;
+    let mut service: Option<String> = None;
     let mut tag: Option<String> = None;
     let mut check_id: Option<String> = None;
     let mut node: Option<String> = None;
     let mut expected_leader: Option<String> = None;
     let mut expected_peer_count: Option<usize> = None;
+    let mut expected_version: Option<String> = None;
 
     unsafe {
         let mut ap = ArgumentParser::new();
         ap.set_description("Nagios/Centreon compatible Consul check commands.");
         ap.refer(&mut mode)
             .add_option(&["-m", "--mode"], Store,
-                        "Consul check mode (leader, cluster, service, health)");
+                        "Consul check mode (leader, cluster, service-health, node-service-health)");
         ap.refer(&mut host)
             .add_option(&["-h", "--host"], StoreOption,
                         "Consul service host");
@@ -227,7 +225,7 @@ fn main() {
         ap.refer(&mut critical_max)
             .add_option(&["--critical-max"], StoreOption,
                         "Critical if more than that value");
-        ap.refer(&mut service_name)
+        ap.refer(&mut service)
             .add_option(&["--service"], StoreOption,
                         "Service name");
         ap.refer(&mut tag)
@@ -245,6 +243,9 @@ fn main() {
         ap.refer(&mut expected_peer_count)
             .add_option(&["--expected-peers-count"], StoreOption,
                         "Expected peers count in cluster");
+        ap.refer(&mut expected_version)
+            .add_option(&["--expected-version"], StoreOption,
+                        "Expected Consul service version");
         ap.refer(&mut CRITICAL_ON_ERROR)
             .add_option(&["--critical-on-error"], StoreTrue,
                         "Exit with critical status on error");
@@ -257,10 +258,22 @@ fn main() {
     let config = Config::new_from_consul_host(format!("http://{}", host.unwrap_or("127.0.0.1".to_owned())).as_ref(), port, token).expect("Impossible de générer la configuration");
     let client = Client::new(config);
     match &*mode {
-        "service-health" => check_service_health(client, warning_min, warning_max, critical_min, critical_max, service_name, tag),
+        "service-health" => {
+            let service = service.unwrap_or_else(|| {
+                eprintln!("service must be provided for this mode");
+                exit(EXIT_UNKNOWN);
+            });
+            check_service_health(client, &*service, warning_min, warning_max, critical_min, critical_max, tag)
+        },
         "leader" => check_leader(client, expected_leader),
         "peers" => check_peers(client, expected_peer_count),
-        "node-service-health" => check_node_service_health(client, warning_min, warning_max, critical_min, critical_max, node, service_name, check_id),
+        "node-service-health" => {
+            let node = node.unwrap_or_else(|| {
+                eprintln!("node must be provided in this mode");
+                exit(EXIT_UNKNOWN);
+            });
+            check_node_service_health(client, &*node, warning_min, warning_max, critical_min, critical_max, service, check_id)
+        },
         "" => { eprintln!("No check mode found"); exit(EXIT_UNKNOWN) },
         _ => { eprintln!("Unknown check mode {mode}"); exit(EXIT_UNKNOWN) },
     }
