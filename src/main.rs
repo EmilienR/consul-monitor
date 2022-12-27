@@ -33,17 +33,17 @@ fn error_exit(err_desc: &str, err: Error) -> ! {
 fn print_service_perfdata_and_details(passing_service_count: &u32, srvcs: &Vec<ServiceEntry>) {
     println!("|instance_count={}", passing_service_count);
     for srvc in srvcs {
-        println!("{} on node {}", srvc.Service.Service, srvc.Node.Node);
+        println!("{} on node {} (tags: {})", srvc.Service.Service, srvc.Node.Node, srvc.Service.Tags.as_ref().map_or("".to_string(), |tags| { tags.join(", ") }));
         for c in &srvc.Checks {
             println!("\tCheck '{}' is {} : {}", c.CheckID, c.Status, c.Output);
         }
     }
 }
 
-fn check_service_health(c: Client, wmin: Option<u32>, wmax: Option<u32>, cmin: Option<u32>, cmax: Option<u32>, service_name: Option<String>) {
+fn check_service_health(c: Client, wmin: Option<u32>, wmax: Option<u32>, cmin: Option<u32>, cmax: Option<u32>, service_name: Option<String>, tag: Option<String>) {
     let service_name = service_name.expect("service-name must be provided for this check");
 
-    match c.service(&*service_name, None, false, None) {
+    match c.service(&*service_name, tag.as_deref(), false, None) {
         Ok(consul_srvc_res) => {
             let mut passing_service_count = 0;
             for srvc in &consul_srvc_res.0 {
@@ -194,6 +194,7 @@ fn main() {
     let mut critical_min: Option<u32> = None;
     let mut critical_max: Option<u32> = None;
     let mut service_name: Option<String> = None;
+    let mut tag: Option<String> = None;
     let mut check_id: Option<String> = None;
     let mut node: Option<String> = None;
     let mut expected_leader: Option<String> = None;
@@ -229,6 +230,9 @@ fn main() {
         ap.refer(&mut service_name)
             .add_option(&["--service"], StoreOption,
                         "Service name");
+        ap.refer(&mut tag)
+            .add_option(&["--tag"], StoreOption,
+                        "Service tag");
         ap.refer(&mut node)
             .add_option(&["--node"], StoreOption,
                         "Node name");
@@ -253,7 +257,7 @@ fn main() {
     let config = Config::new_from_consul_host(format!("http://{}", host.unwrap_or("127.0.0.1".to_owned())).as_ref(), port, token).expect("Impossible de générer la configuration");
     let client = Client::new(config);
     match &*mode {
-        "service-health" => check_service_health(client, warning_min, warning_max, critical_min, critical_max, service_name),
+        "service-health" => check_service_health(client, warning_min, warning_max, critical_min, critical_max, service_name, tag),
         "leader" => check_leader(client, expected_leader),
         "peers" => check_peers(client, expected_peer_count),
         "node-service-health" => check_node_service_health(client, warning_min, warning_max, critical_min, critical_max, node, service_name, check_id),
