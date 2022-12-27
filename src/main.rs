@@ -138,7 +138,8 @@ fn check_node_service_health(c: Client, node: &str, wmin: Option<u32>, wmax: Opt
 fn check_leader(c: Client, expected_leader: Option<String>) {
     match c.leader(None) {
         Ok(leader) => {
-            if let Some(el) = expected_leader {
+            if let Some(mut el) = expected_leader {
+                el.push_str(":8300");
                 if el != leader.0 {
                     println!("{} is not the expected cluster leader (expected {})", el, leader.0);
                     exit(EXIT_CRITICAL);
@@ -186,21 +187,20 @@ fn main() {
     let mut host: Option<String> = None;
     let mut port: Option<u16> = None;
     let mut token: Option<String> = None;
-    let mut warning_min: Option<u32> = None;
-    let mut warning_max: Option<u32> = None;
-    let mut critical_min: Option<u32> = None;
-    let mut critical_max: Option<u32> = None;
+    let mut warning_min: Option<i32> = None;
+    let mut warning_max: Option<i32> = None;
+    let mut critical_min: Option<i32> = None;
+    let mut critical_max: Option<i32> = None;
     let mut service: Option<String> = None;
     let mut tag: Option<String> = None;
     let mut check_id: Option<String> = None;
     let mut node: Option<String> = None;
     let mut expected_leader: Option<String> = None;
-    let mut expected_peer_count: Option<usize> = None;
-    let mut expected_version: Option<String> = None;
+    let mut expected_peer_count: Option<i32> = None;
 
     unsafe {
         let mut ap = ArgumentParser::new();
-        ap.set_description("Nagios/Centreon compatible Consul check commands.");
+        ap.set_description("Nagios/Centreon-compatible Consul check commands with perfdata.");
         ap.refer(&mut mode)
             .add_option(&["-m", "--mode"], Store,
                         "Consul check mode (leader, cluster, service-health, node-service-health)");
@@ -241,11 +241,8 @@ fn main() {
             .add_option(&["--expected-leader"], StoreOption,
                         "Expected cluster leader");
         ap.refer(&mut expected_peer_count)
-            .add_option(&["--expected-peers-count"], StoreOption,
-                        "Expected peers count in cluster");
-        ap.refer(&mut expected_version)
-            .add_option(&["--expected-version"], StoreOption,
-                        "Expected Consul service version");
+            .add_option(&["--expected-peer-count"], StoreOption,
+                        "Expected peer count in cluster");
         ap.refer(&mut CRITICAL_ON_ERROR)
             .add_option(&["--critical-on-error"], StoreTrue,
                         "Exit with critical status on error");
@@ -254,6 +251,15 @@ fn main() {
                         "Print extended output");
         ap.parse_args_or_exit();
     }
+    let tag = tag.and_then(|t| { if t.is_empty() { None } else { Some(t) }});
+    let service = service.and_then(|x| { if x.is_empty() { None } else { Some(x) }});
+    let check_id = check_id.and_then(|x| { if x.is_empty() { None } else { Some(x) }});
+    let expected_leader = expected_leader.and_then(|x| { if x.is_empty() { None } else { Some(x) }});
+    let expected_peer_count = expected_peer_count.and_then(|x| { if x < 0 { None } else { Some(x as usize) }});
+    let warning_min = warning_min.and_then(|x| { if x < 0 { None } else { Some(x as u32) }});
+    let critical_min = critical_min.and_then(|x| { if x < 0 { None } else { Some(x as u32) }});
+    let warning_max = warning_max.and_then(|x| { if x < 0 { None } else { Some(x as u32) }});
+    let critical_max = critical_max.and_then(|x| { if x < 0 { None } else { Some(x as u32) }});
 
     let config = Config::new_from_consul_host(format!("http://{}", host.unwrap_or("127.0.0.1".to_owned())).as_ref(), port, token).expect("Impossible de générer la configuration");
     let client = Client::new(config);
@@ -274,7 +280,6 @@ fn main() {
             });
             check_node_service_health(client, &*node, warning_min, warning_max, critical_min, critical_max, service, check_id)
         },
-        "" => { eprintln!("No check mode found"); exit(EXIT_UNKNOWN) },
-        _ => { eprintln!("Unknown check mode {mode}"); exit(EXIT_UNKNOWN) },
+        _ => { eprintln!("Unknown check mode '{mode}'"); exit(EXIT_UNKNOWN) },
     }
 }
