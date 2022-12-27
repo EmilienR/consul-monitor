@@ -32,7 +32,7 @@ consul-monitor --mode peers [--expected-peer-count COUNT]
 Check how many service instances have passing status in Consul.
 
 ```shell
-consul-monitor --mode service-health --service SERVICE_NAME [--warning-min MIN] [--critical-min MIN] [--warning-max MAX] [--critical-max MAX]
+consul-monitor --mode service-health --service SERVICE_NAME [--warning-min MIN] [--critical-min MIN] [--warning-max MAX] [--critical-max MAX] [--tag TAG]
 ```
 
 # Check service/check on a node
